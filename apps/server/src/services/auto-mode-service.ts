@@ -2471,8 +2471,15 @@ Implement all the changes described in the plan above.`;
           }
         }
       } else if (msg.type === 'error') {
-        // Handle error messages
-        throw new Error(msg.error || 'Unknown error');
+        // Handle error messages - log them but don't crash the entire agent run
+        // Tool errors are expected and the agent should recover and try other approaches
+        console.warn(`[AutoMode] Tool error during execution: ${msg.error || 'Unknown error'}`);
+        // Add error to output for visibility
+        if (responseText.length > 0 && !responseText.endsWith('\n')) {
+          responseText += '\n';
+        }
+        responseText += `❌ Error: ${msg.error || 'Unknown error'}\n`;
+        scheduleWrite();
       } else if (msg.type === 'result' && msg.subtype === 'success') {
         // Don't replace responseText - the accumulated content is the full history
         // The msg.result is just a summary which would lose all tool use details

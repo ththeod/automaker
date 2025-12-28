@@ -1273,6 +1273,10 @@ export class ZaiProvider extends BaseProvider {
     let turnCount = 0;
     // Use sdkSessionId if provided, otherwise generate a new one
     let sessionId = sdkSessionId || this.generateSessionId();
+    // Track repeated tool failures to prevent infinite loops
+    // IMPORTANT: Declare outside the while loop so failures persist across turns
+    const recentFailures = new Map<string, { error: string; count: number }>();
+    const MAX_SAME_FAILURES = 2; // Stop after 2 identical failures for the same tool+input
 
     while (turnCount < maxTurns) {
       if (abortController?.signal.aborted) {
@@ -1565,6 +1569,53 @@ export class ZaiProvider extends BaseProvider {
               };
             } catch (toolError) {
               const errorMsg = `Tool ${toolName} failed: ${(toolError as Error).message}`;
+
+              // Check for repeated failures to prevent infinite loops
+              // Use a simpler key based on tool name and primary argument
+              const primaryArg =
+                toolArgs.filePath ||
+                toolArgs.path ||
+                toolArgs.pattern ||
+                toolArgs.query ||
+                JSON.stringify(toolArgs);
+              const failureKey = `${toolName}:${primaryArg}`;
+              const previousFailure = recentFailures.get(failureKey);
+
+              if (previousFailure && previousFailure.error === errorMsg) {
+                previousFailure.count++;
+                logger.info(`[Zai] Tool ${toolName} failure count: ${previousFailure.count}`);
+                if (previousFailure.count >= MAX_SAME_FAILURES) {
+                  // Same tool failed multiple times with same error - add guidance to conversation
+                  logger.warn(
+                    `[Zai] Tool ${toolName} failed ${previousFailure.count} times with same error, suggesting alternative approach`
+                  );
+                  const guidanceMsg = `Note: The tool ${toolName} has failed ${previousFailure.count} times with this error: "${errorMsg}". Please try a different approach or tool instead of repeating this operation.`;
+                  messages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: errorMsg + '\n\n' + guidanceMsg,
+                  });
+                  yield {
+                    type: 'error',
+                    error: errorMsg,
+                  };
+                  // Reset failure count after adding guidance (allows future attempts if context changes)
+                  recentFailures.delete(failureKey);
+                  continue; // Let agent try another approach
+                }
+              } else {
+                const count = previousFailure ? previousFailure.count + 1 : 1;
+                recentFailures.set(failureKey, { error: errorMsg, count });
+                logger.info(`[Zai] Recording first failure for ${failureKey}, count: ${count}`);
+                // Clean old failures (keep only most recent 5)
+                if (recentFailures.size > 5) {
+                  const firstKey = recentFailures.keys().next().value;
+                  if (firstKey) {
+                    recentFailures.delete(firstKey);
+                  }
+                }
+              }
+
               messages.push({
                 role: 'tool',
                 tool_call_id: toolCall.id,
