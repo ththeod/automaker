@@ -12,7 +12,7 @@ const logger = createLogger('AutoMode');
 export function createAnalyzeProjectHandler(autoModeService: AutoModeService) {
   return async (req: Request, res: Response): Promise<void> => {
     try {
-      const { projectPath } = req.body as { projectPath: string };
+      const { projectPath, force } = req.body as { projectPath: string; force?: boolean };
 
       if (!projectPath) {
         res.status(400).json({ success: false, error: 'projectPath is required' });
@@ -20,7 +20,7 @@ export function createAnalyzeProjectHandler(autoModeService: AutoModeService) {
       }
 
       // Start analysis in background
-      autoModeService.analyzeProject(projectPath).catch((error) => {
+      autoModeService.analyzeProject(projectPath, force ?? false).catch((error) => {
         logger.error(`[AutoMode] Project analysis error:`, error);
       });
 

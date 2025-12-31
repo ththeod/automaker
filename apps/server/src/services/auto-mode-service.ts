@@ -1100,6 +1100,21 @@ Address the follow-up instructions above. Review the previous work and make the 
   }
 
   /**
+   * Check if analysis exists for a project
+   */
+  async analysisExists(projectPath: string): Promise<boolean> {
+    const automakerDir = getAutomakerDir(projectPath);
+    const analysisPath = path.join(automakerDir, 'project-analysis.md');
+
+    try {
+      await secureFs.access(analysisPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Analyze project to gather context
    */
   async analyzeProject(projectPath: string): Promise<void> {
